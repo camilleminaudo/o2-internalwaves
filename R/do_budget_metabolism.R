@@ -47,12 +47,12 @@
 
 ## ---------------------------------------------------------------- CONFIG ----
 cfg <- list(
-  input_file      = NULL,                  # wide csv; NULL -> synthetic test with known truth
+  input_file      = "C:/Projects/myGit/o2-internalwaves/data/Gergal_example_wide.csv",                  # wide csv; NULL -> synthetic test with known truth
   iw_script       = "iw_correction_time_domain.R",
   out_dir         = "results_budget",
   time_col        = "time",
   time_format     = NULL,                  # NULL = auto (ISO, "Y-m-d H:M:S", epoch s)
-  tz              = "UTC",
+  tz              = "GMT",
   do_prefix       = "DO", t_prefix = "T", par_prefix = "PAR",
   wind_col        = "wind",
   zth_col         = "z_th",
@@ -77,13 +77,14 @@ cfg <- list(
   day_start_hour  = 0,
   min_coverage    = 0.8,
   iw              = list(surface_rule = "hybrid", surface_depth_max = 3),   # passed to the IW script
-  ## NEW: spectral scale separation ------------------------------------
+
+  ## spectral scale separation ------------------------------------
   run_spectral    = TRUE,
   spectral_script = "spectral_iw_correction.R",
   spectral        = list(band_integration = "trapz"),   # overrides of spectral_defaults ("rect": less biased)
   spectral_iw_rule = "follow_td",          # "all": step i at every depth (paper);
                                            # "follow_td": no step i at near-surface depths that the
-                                           # time-domain hybrid rule left uncorrected on most days
+                                           # time-domain hybrid rule leaves uncorrected on most days
   spec_smooth_hw_days = 30,                # low-pass half-width for <DO>, <T> and the NEP budget
   make_plots      = TRUE
 )
@@ -600,19 +601,28 @@ make_synthetic <- function(cfg, days = 12, step_min = 30, seed = 7, event_offset
 }
 
 ## ------------------------------------------------------------------ RUN ----
+## FIX: load a companion script without running its RUN block. The option is
+## restored on exit even if sourcing fails, so it cannot stay TRUE in the session
+## (which silently disabled the RUN blocks of all scripts).
+load_as_library <- function(path) {
+  old <- options(iw.library_mode = TRUE)
+  on.exit(options(old))
+  env <- new.env()
+  sys.source(path, envir = env)
+  env
+}
+
 if (!isTRUE(getOption("iw.library_mode", FALSE))) {
   if (requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
     p <- rstudioapi::getSourceEditorContext()$path
     if (nzchar(p)) setwd(dirname(p))
   }
   if (!file.exists(cfg$iw_script)) stop("IW script not found: ", cfg$iw_script, call. = FALSE)
-  old <- options(iw.library_mode = TRUE)
-  iw_env <- new.env(); sys.source(cfg$iw_script, envir = iw_env)
-  options(old)
-  sp_env <- NULL                                           ## NEW
+  iw_env <- load_as_library(cfg$iw_script)             ## FIX: option always restored
+  sp_env <- NULL
   if (isTRUE(cfg$run_spectral)) {
     if (!file.exists(cfg$spectral_script)) stop("Spectral script not found: ", cfg$spectral_script, call. = FALSE)
-    sp_env <- new.env(); sys.source(cfg$spectral_script, envir = sp_env)
+    sp_env <- load_as_library(cfg$spectral_script)
   }
 
   dir.create(cfg$out_dir, showWarnings = FALSE, recursive = TRUE)
